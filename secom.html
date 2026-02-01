@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>슈퍼 보안 시스템 - 마스터 가드</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --panel-color: #2c3e50;
+            --lcd-bg: #222;
+            --lcd-text: #00ff41;
+            --lcd-alarm: #ff3e3e;
+            --btn-action: #3498db;
+            --btn-security: #e74c3c;
+            --btn-disarm: #f39c12;
+            --btn-number: #ecf0f1;
+            --accent: #f1c40f;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .security-device {
+            background-color: var(--panel-color);
+            width: 380px;
+            padding: 25px;
+            border-radius: 30px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5), inset 0 2px 5px rgba(255,255,255,0.2);
+            border: 4px solid #34495e;
+            text-align: center;
+            position: relative;
+        }
+
+        /* LCD 화면 */
+        .lcd-screen {
+            background-color: var(--lcd-bg);
+            height: 110px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border: 3px solid #111;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 시스템 잠금 레이어 */
+        #lock-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: none; /* 기본은 숨김 */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            color: var(--accent);
+            border-radius: 7px;
+        }
+
+        .lock-icon { font-size: 50px; margin-bottom: 5px; animation: bounce 1s infinite; }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+
+        /* 경비 중 애니메이션 */
+        .lcd-screen.alarm-mode { background-color: #400; box-shadow: inset 0 0 20px #f00; border-color: #f00; }
+
+        #status-text { color: var(--lcd-text); font-size: 1.2rem; font-weight: bold; margin-bottom: 5px; }
+        #input-display { color: var(--accent); font-size: 1.6rem; letter-spacing: 5px; height: 1.6rem; font-family: 'Courier New', monospace; }
+
+        /* 컨트롤 구역 */
+        .controls { display: grid; grid-template-columns: 2fr 1fr; gap: 15px; margin-bottom: 20px; }
+
+        .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .btn-num {
+            background: var(--btn-number); border: none; padding: 15px; font-size: 1.2rem;
+            font-weight: bold; border-radius: 10px; cursor: pointer; box-shadow: 0 4px #bdc3c7;
+        }
+        .btn-num:active { box-shadow: 0 0px #bdc3c7; transform: translateY(4px); }
+
+        .action-buttons { display: flex; flex-direction: column; gap: 8px; }
+        .btn-act {
+            padding: 12px 5px; border: none; border-radius: 8px; color: white;
+            font-weight: bold; cursor: pointer; box-shadow: 0 4px rgba(0,0,0,0.3); font-size: 0.9rem;
+        }
+        .btn-act.blue { background-color: var(--btn-action); }
+        .btn-act.red { background-color: var(--btn-security); }
+        .btn-act.orange { background-color: var(--btn-disarm); }
+        .btn-act:disabled { background-color: #555; cursor: not-allowed; box-shadow: none; }
+
+        /* 지문 인식기 */
+        .fingerprint-section {
+            background: #222; padding: 20px; border-radius: 20px; border: 2px solid #444;
+            cursor: pointer; position: relative; overflow: hidden;
+        }
+        .finger-icon { font-size: 50px; color: #555; transition: 0.3s; }
+        .scanning-light {
+            position: absolute; top: -100%; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(transparent, rgba(52, 152, 219, 0.5), transparent); display: none;
+        }
+        .active-scan .scanning-light { display: block; animation: scan 1.2s infinite; }
+        @keyframes scan { 0% { top: -100%; } 100% { top: 100%; } }
+        .active-scan .finger-icon { color: var(--btn-action); text-shadow: 0 0 15px var(--btn-action); }
+
+    </style>
+</head>
+<body>
+
+<div class="security-device">
+    <!-- LCD 화면 구역 -->
+    <div class="lcd-screen" id="lcd">
+        <!-- 잠금 시 나타날 오버레이 -->
+        <div id="lock-overlay">
+            <div class="lock-icon">🔒</div>
+            <div style="font-weight: bold; font-size: 0.9rem;">SYSTEM LOCKED</div>
+        </div>
+        
+        <div id="status-text">시스템 대기 중...</div>
+        <div id="input-display"></div>
+    </div>
+
+    <!-- 조작부 -->
+    <div class="controls">
+        <div class="keypad">
+            <button class="btn-num" onclick="pressKey('1')">1</button>
+            <button class="btn-num" onclick="pressKey('2')">2</button>
+            <button class="btn-num" onclick="pressKey('3')">3</button>
+            <button class="btn-num" onclick="pressKey('4')">4</button>
+            <button class="btn-num" onclick="pressKey('5')">5</button>
+            <button class="btn-num" onclick="pressKey('6')">6</button>
+            <button class="btn-num" onclick="pressKey('7')">7</button>
+            <button class="btn-num" onclick="pressKey('8')">8</button>
+            <button class="btn-num" onclick="pressKey('9')">9</button>
+            <button class="btn-num" onclick="clearInput()" style="background:#e67e22; color:white;">C</button>
+            <button class="btn-num" onclick="pressKey('0')">0</button>
+            <button class="btn-num" onclick="pressKey('#')">#</button>
+        </div>
+
+        <div class="action-buttons">
+            <button class="btn-act blue action-btn" onclick="prepareAction('출근')">출근</button>
+            <button class="btn-act blue action-btn" onclick="prepareAction('퇴근')">퇴근</button>
+            <button class="btn-act blue action-btn" onclick="prepareAction('외출')">외출</button>
+            <button class="btn-act red action-btn" onclick="prepareAction('경비')">경비</button>
+            <button class="btn-act orange action-btn" onclick="prepareAction('해제')">해제</button>
+        </div>
+    </div>
+
+    <!-- 지문 인식기 -->
+    <div class="fingerprint-section" id="scanner" onclick="scanFingerprint()">
+        <div class="scanning-light"></div>
+        <div class="finger-icon">☝</div>
+        <div style="color: #888; font-size: 0.7rem; margin-top: 5px;">지문 인식 센서</div>
+    </div>
+</div>
+
+<script>
+    let currentInput = "";
+    let pendingAction = "";
+    let isArmed = false; 
+    let isLocked = false; // 시스템 잠금 상태 변수
+
+    const statusText = document.getElementById('status-text');
+    const inputDisplay = document.getElementById('input-display');
+    const scanner = document.getElementById('scanner');
+    const lcd = document.getElementById('lcd');
+    const lockOverlay = document.getElementById('lock-overlay');
+    const actionBtns = document.querySelectorAll('.action-btn');
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playBeep(freq = 880, dur = 0.1, type = 'square') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + dur);
+    }
+
+    function pressKey(num) {
+        if (num === '#') {
+            checkPassword();
+            return;
+        }
+        
+        playBeep(1000, 0.05);
+        if (currentInput.length < 8) {
+            currentInput += num;
+            inputDisplay.innerText = currentInput;
+        }
+    }
+
+    function checkPassword() {
+        if (currentInput === '112') {
+            toggleLock();
+        } else {
+            playBeep(200, 0.3, 'sawtooth');
+            speak("비밀번호가 틀렸습니다.");
+            clearInput();
+        }
+    }
+
+    function toggleLock() {
+        isLocked = !isLocked;
+        clearInput();
+
+        if (isLocked) {
+            // 잠금 모드 진입
+            playBeep(400, 0.5, 'sine');
+            setTimeout(() => playBeep(300, 0.5, 'sine'), 200);
+            lockOverlay.style.display = 'flex';
+            actionBtns.forEach(btn => btn.disabled = true);
+            speak("시스템을 잠급니다. 접근할 수 없습니다.");
+        } else {
+            // 잠금 해제
+            playBeep(800, 0.1);
+            setTimeout(() => playBeep(1200, 0.2), 100);
+            lockOverlay.style.display = 'none';
+            actionBtns.forEach(btn => btn.disabled = false);
+            speak("시스템 잠금이 해제되었습니다. 환영합니다.");
+        }
+    }
+
+    function clearInput() {
+        playBeep(400, 0.1);
+        currentInput = "";
+        inputDisplay.innerText = "";
+    }
+
+    function prepareAction(action) {
+        if (isLocked) return; // 잠금 상태면 무시
+
+        if (isArmed && action !== '해제') {
+            playBeep(200, 0.3);
+            statusText.innerText = "경비 해제 필요!";
+            speak("경비 모드입니다. 먼저 해제하세요.");
+            return;
+        }
+
+        playBeep(1200, 0.1);
+        pendingAction = action;
+        statusText.innerText = "지문 인식 대기...";
+        scanner.classList.add('active-scan');
+    }
+
+    function scanFingerprint() {
+        if (isLocked || !pendingAction) {
+            if (!isLocked) playBeep(300, 0.2);
+            return;
+        }
+
+        playBeep(1500, 0.1);
+        setTimeout(() => playBeep(2000, 0.1), 100);
+
+        let msg = "";
+        if (pendingAction === '경비') {
+            isArmed = true;
+            msg = "경비 시스템 가동. 무단 침입을 감시합니다.";
+            lcd.classList.add('alarm-mode');
+            statusText.innerText = "경비 중 - 접근 금지";
+        } else if (pendingAction === '해제') {
+            isArmed = false;
+            msg = "경비가 성공적으로 해제되었습니다.";
+            lcd.classList.remove('alarm-mode');
+            statusText.innerText = "경비 해제 완료";
+        } else {
+            msg = `${pendingAction} 처리가 완료되었습니다.`;
+            statusText.innerText = msg;
+        }
+
+        speak(msg);
+        finishProcess();
+    }
+
+    function finishProcess() {
+        scanner.classList.remove('active-scan');
+        pendingAction = "";
+        currentInput = "";
+        inputDisplay.innerText = "";
+        setTimeout(() => {
+            if (!isLocked) {
+                statusText.innerText = isArmed ? "경비 중 - 접근 금지" : "시스템 대기 중...";
+            }
+        }, 3000);
+    }
+
+    function speak(text) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'ko-KR';
+        utterance.rate = 1.1;
+        window.speechSynthesis.speak(utterance);
+    }
+</script>
+
+</body>
+</html>
